@@ -168,6 +168,7 @@ class ToastForm : Form
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
+        DoubleBuffered = true;
         BackColor = Color.White;
         Opacity = 0.8;
         Size = new Size(300, 200);
@@ -251,6 +252,17 @@ class ToastForm : Form
         }
 
         base.Dispose(disposing);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var rect = ClientRectangle;
+        rect.Inflate(-2, -2);
+        using var path = CreateRoundRectangle(rect, 24);
+        using var pen = new Pen(Color.DeepSkyBlue, 3);
+        e.Graphics.DrawPath(pen, path);
     }
 
     static GraphicsPath CreateRoundRectangle(Rectangle rect, int radius)
