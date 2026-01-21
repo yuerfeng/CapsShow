@@ -234,7 +234,7 @@ class ToastForm : Form
         var workingArea = Screen.PrimaryScreen?.WorkingArea ?? SystemInformation.WorkingArea;
         Location = new Point(
             workingArea.Left + (workingArea.Width - Width) / 2,
-            workingArea.Top + (workingArea.Height - Height) / 2
+            workingArea.Top + (workingArea.Height * 3 / 4) - (Height / 2)
         );
     }
 
