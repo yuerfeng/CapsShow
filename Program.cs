@@ -172,7 +172,7 @@ class ToastForm : Form
         DoubleBuffered = true;
         BackColor = Color.White;
         Opacity = 0.8;
-        Size = new Size(300, 200);
+        Size = new Size(300, 300);
 
         message = capsOn ? "当前状态：大写" : "当前状态：小写";
 
