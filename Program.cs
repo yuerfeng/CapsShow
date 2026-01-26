@@ -161,6 +161,7 @@ class KeyboardHook : IDisposable
 class ToastForm : Form
 {
     readonly System.Windows.Forms.Timer timer;
+    readonly string message;
 
     public ToastForm(bool capsOn)
     {
@@ -173,44 +174,16 @@ class ToastForm : Form
         Opacity = 0.8;
         Size = new Size(300, 200);
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
-        };
-
-        table.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
-        table.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-
-        var picture = new PictureBox
-        {
-            Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Zoom
-        };
+        message = capsOn ? "当前状态：大写" : "当前状态：小写";
 
         var logoPath = Path.Combine(AppContext.BaseDirectory, "logo.png");
 
         if (File.Exists(logoPath))
         {
             using var img = Image.FromFile(logoPath);
-            picture.Image = new Bitmap(img);
+            BackgroundImage = new Bitmap(img);
+            BackgroundImageLayout = ImageLayout.Stretch;
         }
-
-        var label = new Label
-        {
-            ForeColor = Color.Black,
-            Font = new Font("Segoe UI", 12, FontStyle.Bold),
-            Text = capsOn ? "当前状态：大写" : "当前状态：小写",
-            AutoSize = false,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter
-        };
-
-        table.Controls.Add(picture, 0, 0);
-        table.Controls.Add(label, 0, 1);
-
-        Controls.Add(table);
 
         Region = new Region(CreateRoundRectangle(new Rectangle(0, 0, Width, Height), 24));
 
@@ -258,11 +231,18 @@ class ToastForm : Form
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var rect = ClientRectangle;
-        rect.Inflate(-2, -2);
-        using var path = CreateRoundRectangle(rect, 24);
-        using var pen = new Pen(Color.DeepSkyBlue, 3);
-        e.Graphics.DrawPath(pen, path);
+
+        using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
+        using (var brush = new SolidBrush(Color.Black))
+        {
+            var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+            float y = Height - (Height / 5.0f);
+            e.Graphics.DrawString(message, font, brush, Width / 2, y, format);
+        }
     }
 
     static GraphicsPath CreateRoundRectangle(Rectangle rect, int radius)
