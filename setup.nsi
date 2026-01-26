@@ -46,7 +46,7 @@ SectionEnd
 Section "Uninstall"
     Delete "$DESKTOP\CapsShow.lnk"
     Delete "$SMPROGRAMS\CapsShow\CapsShow.lnk"
-    Delete "$SMPROGRAMS\CapsShow\卸载 CapsShow.lnk"
+    Delete "$SMPROGRAMS\CapsShow\Uninstall CapsShow.lnk"
     RMDir "$SMPROGRAMS\CapsShow"
 
     RMDir /r "$INSTDIR"
