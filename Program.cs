@@ -172,7 +172,7 @@ class ToastForm : Form
 {
     readonly System.Windows.Forms.Timer timer;
     readonly Image? logo;
-    readonly int drawLogoW, drawLogoH, formW, formH;
+    readonly int formSize;
     Bitmap? formBitmap;
     bool currentCapsOn;
 
@@ -229,15 +229,9 @@ class ToastForm : Form
             logo = new Bitmap(img);
         }
 
-        // 根据 logo 大小决定窗口尺寸
-        int logoW = logo?.Width ?? 128;
-        int logoH = logo?.Height ?? 128;
-        float scale = Math.Min(280f / logoW, 180f / logoH);
-        drawLogoW = (int)(logoW * scale);
-        drawLogoH = (int)(logoH * scale);
-        formW = drawLogoW + 80;
-        formH = drawLogoH + 100;
-        Size = new Size(formW, formH);
+        // 窗口尺寸 256x256（原图 512 缩半）
+        formSize = 512;
+        Size = new Size(formSize, formSize);
 
         timer = new System.Windows.Forms.Timer { Interval = 3000 };
         timer.Tick += OnTimerTick;
@@ -272,33 +266,33 @@ class ToastForm : Form
     void RedrawAndUpdate()
     {
         formBitmap?.Dispose();
-        formBitmap = new Bitmap(formW, formH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        formBitmap = new Bitmap(formSize, formSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(formBitmap);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-        // 半透明圆角浅色背景
-        using (var bgBrush = new SolidBrush(Color.FromArgb(220, 245, 245, 245)))
-        {
-            using var rrPath = CreateRoundRectangle(new Rectangle(0, 0, formW, formH), 24);
-            g.FillPath(bgBrush, rrPath);
-        }
-
-        // 绘制 logo（居中偏上）
+        // 图片铺满整个窗口作为背景（alpha 通道保留透明度）
         if (logo != null)
         {
-            int logoX = (formW - drawLogoW) / 2;
-            int logoY = 20;
-            g.DrawImage(logo, logoX, logoY, drawLogoW, drawLogoH);
+            g.DrawImage(logo, 0, 0, formSize, formSize);
         }
 
-        // 绘制文字
-        var text = currentCapsOn ? "当前状态：大写" : "当前状态：小写";
-        using var font = new Font("Segoe UI", 12, FontStyle.Bold);
-        using var textBrush = new SolidBrush(Color.FromArgb(50, 50, 50));
-        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        var textRect = new RectangleF(0, drawLogoH + 20, formW, formH - drawLogoH - 30);
-        g.DrawString(text, font, textBrush, textRect, sf);
+        // 绘制文字（白色填充 + 深色描边，无需衬底方块）
+        var text = currentCapsOn ? "大写" : "小写";
+        using var font = new Font("Segoe UI", 24, FontStyle.Bold);
+        using var textPath = new GraphicsPath();
+        using var sf = new StringFormat { Alignment = StringAlignment.Center };
+        float textX = formSize / 2f;
+        float textY = formSize - 80;
+        textPath.AddString(text, font.FontFamily, (int)font.Style, font.Size, new PointF(textX, textY), sf);
+
+        // 深色描边（轮廓）
+        using var outlinePen = new Pen(Color.FromArgb(200, 0, 0, 0), 5f) { LineJoin = LineJoin.Round };
+        g.DrawPath(outlinePen, textPath);
+
+        // 白色填充
+        using var fillBrush = new SolidBrush(Color.White);
+        g.FillPath(fillBrush, textPath);
 
         UpdateLayeredWindowBitmap();
     }
@@ -357,23 +351,5 @@ class ToastForm : Form
             logo?.Dispose();
         }
         base.Dispose(disposing);
-    }
-
-    static GraphicsPath CreateRoundRectangle(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2;
-        var arc = new Rectangle(rect.Location, new Size(diameter, diameter));
-
-        path.AddArc(arc, 180, 90);
-        arc.X = rect.Right - diameter;
-        path.AddArc(arc, 270, 90);
-        arc.Y = rect.Bottom - diameter;
-        path.AddArc(arc, 0, 90);
-        arc.X = rect.Left;
-        path.AddArc(arc, 90, 90);
-        path.CloseFigure();
-
-        return path;
     }
 }
