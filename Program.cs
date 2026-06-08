@@ -62,12 +62,22 @@ class CapsApplicationContext : ApplicationContext
         ExitThread();
     }
 
+    ToastForm? currentToast;
+
     void OnCapsLockPressed(object? sender, EventArgs e)
     {
         var current = Control.IsKeyLocked(Keys.CapsLock);
         var newState = !current;
-        var toast = new ToastForm(newState);
-        toast.Show();
+
+        if (currentToast is { IsDisposed: false })
+        {
+            currentToast.UpdateState(newState);
+        }
+        else
+        {
+            currentToast = new ToastForm(newState);
+            currentToast.Show();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -161,71 +171,166 @@ class KeyboardHook : IDisposable
 class ToastForm : Form
 {
     readonly System.Windows.Forms.Timer timer;
+    readonly Image? logo;
+    readonly int drawLogoW, drawLogoH, formW, formH;
+    Bitmap? formBitmap;
+    bool currentCapsOn;
+
+    const int WsExLayered = 0x00080000;
+    const int AcSrcOver = 0x00;
+    const int AcSrcAlpha = 0x01;
+    const int UlwAlpha = 0x02;
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct POINT { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct SIZE { public int cx, cy; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct BLENDFUNCTION
+    {
+        public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat;
+    }
+
+    [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+    static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
+        ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc,
+        int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+
+    [DllImport("gdi32.dll", ExactSpelling = true)]
+    static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll", ExactSpelling = true)]
+    static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObj);
+
+    [DllImport("gdi32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool DeleteObject(IntPtr hObj);
 
     public ToastForm(bool capsOn)
     {
+        currentCapsOn = capsOn;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
-        BackColor = Color.White;
-        Opacity = 0.8;
-        Size = new Size(300, 200);
+        DoubleBuffered = true;
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
-        };
-
-        table.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
-        table.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-
-        var picture = new PictureBox
-        {
-            Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Zoom
-        };
-
+        // 加载 logo
         var logoPath = Path.Combine(AppContext.BaseDirectory, "logo.png");
-
         if (File.Exists(logoPath))
         {
             using var img = Image.FromFile(logoPath);
-            picture.Image = new Bitmap(img);
+            logo = new Bitmap(img);
         }
 
-        var label = new Label
-        {
-            ForeColor = Color.Black,
-            Font = new Font("Segoe UI", 12, FontStyle.Bold),
-            Text = capsOn ? "当前状态：大写" : "当前状态：小写",
-            AutoSize = false,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter
-        };
+        // 根据 logo 大小决定窗口尺寸
+        int logoW = logo?.Width ?? 128;
+        int logoH = logo?.Height ?? 128;
+        float scale = Math.Min(280f / logoW, 180f / logoH);
+        drawLogoW = (int)(logoW * scale);
+        drawLogoH = (int)(logoH * scale);
+        formW = drawLogoW + 80;
+        formH = drawLogoH + 100;
+        Size = new Size(formW, formH);
 
-        table.Controls.Add(picture, 0, 0);
-        table.Controls.Add(label, 0, 1);
-
-        Controls.Add(table);
-
-        Region = new Region(CreateRoundRectangle(new Rectangle(0, 0, Width, Height), 24));
-
-        timer = new System.Windows.Forms.Timer
-        {
-            Interval = 3000
-        };
-
+        timer = new System.Windows.Forms.Timer { Interval = 3000 };
         timer.Tick += OnTimerTick;
         Shown += OnShown;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= WsExLayered;
+            return cp;
+        }
     }
 
     void OnShown(object? sender, EventArgs e)
     {
         PositionWindow();
+        RedrawAndUpdate();
         timer.Start();
+    }
+
+    public void UpdateState(bool capsOn)
+    {
+        currentCapsOn = capsOn;
+        RedrawAndUpdate();
+        timer.Stop();
+        timer.Start(); // 重置计时器
+    }
+
+    void RedrawAndUpdate()
+    {
+        formBitmap?.Dispose();
+        formBitmap = new Bitmap(formW, formH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(formBitmap);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+        // 半透明圆角浅色背景
+        using (var bgBrush = new SolidBrush(Color.FromArgb(220, 245, 245, 245)))
+        {
+            using var rrPath = CreateRoundRectangle(new Rectangle(0, 0, formW, formH), 24);
+            g.FillPath(bgBrush, rrPath);
+        }
+
+        // 绘制 logo（居中偏上）
+        if (logo != null)
+        {
+            int logoX = (formW - drawLogoW) / 2;
+            int logoY = 20;
+            g.DrawImage(logo, logoX, logoY, drawLogoW, drawLogoH);
+        }
+
+        // 绘制文字
+        var text = currentCapsOn ? "当前状态：大写" : "当前状态：小写";
+        using var font = new Font("Segoe UI", 12, FontStyle.Bold);
+        using var textBrush = new SolidBrush(Color.FromArgb(50, 50, 50));
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        var textRect = new RectangleF(0, drawLogoH + 20, formW, formH - drawLogoH - 30);
+        g.DrawString(text, font, textBrush, textRect, sf);
+
+        UpdateLayeredWindowBitmap();
+    }
+
+    void UpdateLayeredWindowBitmap()
+    {
+        if (formBitmap == null) return;
+
+        var screen = Graphics.FromHwnd(IntPtr.Zero);
+        var hdcScreen = screen.GetHdc();
+        var memDc = CreateCompatibleDC(hdcScreen);
+        var hBitmap = formBitmap.GetHbitmap(Color.FromArgb(0));
+        var oldBitmap = SelectObject(memDc, hBitmap);
+
+        var ptDst = new POINT { X = Left, Y = Top };
+        var sz = new SIZE { cx = formBitmap.Width, cy = formBitmap.Height };
+        var ptSrc = new POINT { X = 0, Y = 0 };
+        var blend = new BLENDFUNCTION
+        {
+            BlendOp = (byte)AcSrcOver,
+            BlendFlags = 0,
+            SourceConstantAlpha = 255,
+            AlphaFormat = (byte)AcSrcAlpha
+        };
+
+        UpdateLayeredWindow(Handle, hdcScreen, ref ptDst, ref sz, memDc, ref ptSrc, 0, ref blend, UlwAlpha);
+
+        SelectObject(memDc, oldBitmap);
+        DeleteObject(hBitmap);
+        DeleteDC(memDc);
+        screen.ReleaseHdc(hdcScreen);
+        screen.Dispose();
     }
 
     void PositionWindow()
@@ -248,8 +353,9 @@ class ToastForm : Form
         if (disposing)
         {
             timer.Dispose();
+            formBitmap?.Dispose();
+            logo?.Dispose();
         }
-
         base.Dispose(disposing);
     }
 
