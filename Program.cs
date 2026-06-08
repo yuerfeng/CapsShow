@@ -230,7 +230,7 @@ class ToastForm : Form
         }
 
         // 窗口尺寸 256x256（原图 512 缩半）
-        formSize = 512;
+        formSize = 256;
         Size = new Size(formSize, formSize);
 
         timer = new System.Windows.Forms.Timer { Interval = 3000 };
